@@ -5,10 +5,10 @@ import logging
 import math
 
 
-class PageReplacementAlgo:
+class PageReplacementAlgo(ABC):
     def __init__(self, total_page_frames: int, pages: list[int]) -> None:
         self.total_page_frames: int = total_page_frames
-        self.frames: list[int] = []
+        self.frames: list = []
         self.pages: list[int] = pages
 
 
@@ -16,15 +16,18 @@ class PageReplacementAlgo:
         return True if len(self.frames) >= self.total_page_frames else False
     
 
+    @abstractmethod
     def get_page(self, index: int):
         pass
 
 
+    @abstractmethod
     def add_page(self, index: int):
         page: int = self.pages[index]
         self.frames.append(page)
 
 
+    @abstractmethod
     def replace_page(self, index: int):
         self.frames.pop(0)
         self.add_page(index)
@@ -56,9 +59,23 @@ class Optimal(PageReplacementAlgo):
         super().__init__(total_page_frames, pages)
 
 
-    def replace_page(self, index: int):
-        remaining_pages = self.pages[index:]
+    def get_page(self, index: int):
+        pass
 
+
+    def add_page(self, index: int):
+        page: int = self.pages[index]
+        self.frames.append(page)
+
+
+    def replace_page(self, index: int):
+        """
+        Replace the page whose next reference is furthest in future
+        """
+
+        remaining_pages = self.pages[index+1:] # only looking at future references
+
+        # getting future references for current frames (inf if no more references)
         next_references = [remaining_pages.index(page) if page in remaining_pages else math.inf for page in self.frames]
 
         furthest_reference = max(next_references)
@@ -74,6 +91,20 @@ class FIFO(PageReplacementAlgo):
         super().__init__(total_page_frames, pages)
 
 
+    def get_page(self, index: int):
+        pass
+
+
+    def add_page(self, index: int):
+        page: int = self.pages[index]
+        self.frames.append(page)
+
+    
+    def replace_page(self, index: int):
+        self.frames.pop(0)
+        self.add_page(index)
+
+
 
 class LRU(PageReplacementAlgo):
     def __init__(self, total_page_frames: int, pages: list[int]) -> None:
@@ -81,47 +112,81 @@ class LRU(PageReplacementAlgo):
 
 
     def get_page(self, index):
+        """
+        Referenced page gets put back to the top of the stack
+        """
         page: int = self.pages[index]
         self.frames.pop(self.frames.index(page))
         self.add_page(index)
 
 
-
-class SecondChance(LRU):
-    def __init__(self, total_page_frames: int, pages: list[int]) -> None:
-        super().__init__(total_page_frames, pages)
-        self.second_chances: dict = {}
+    def add_page(self, index: int):
+        page: int = self.pages[index]
+        self.frames.append(page)
 
     
-    def get_page(self, index: int):
-        super().get_page(index)
-        page: int = self.pages[index]
-        self.second_chances[page] = 1
-
-
-    def add_page(self, index: int):
-        super().add_page(index)
-        page: int = self.pages[index]
-        self.second_chances[page] = 0
-
-
     def replace_page(self, index: int):
-        new_page: int = self.pages[index]
-
-        for i in range(len(self.frames) - 2, 0, -1):
-            current_page = self.frames[i]
-            if self.second_chances[current_page] == 1: 
-                self.second_chances[current_page] = 0
-                continue
-            else:
-                self.frames.pop(i)
-                break
-
+        """
+        Replace least recently referenced page which is at the bottom of the stack
+        """
+        self.frames.pop(0)
         self.add_page(index)
 
 
 
+class SecondChance(PageReplacementAlgo): 
+    def __init__(self, total_page_frames: int, pages: list[int]) -> None:
+        super().__init__(total_page_frames, pages)
+        self.frames = [None] * total_page_frames
+        self.bits = [0] * total_page_frames
+        self.hand = 0 
+        self.current_size = 0 # Track how many slots are actually filled
 
+
+    def isFull(self) -> bool:
+        return self.current_size >= self.total_page_frames
+
+
+    def advance_hand(self) -> None:
+        """
+        Advance hand to next frame
+        """
+        self.hand = (self.hand + 1) % self.total_page_frames
+
+
+    def get_page(self, index: int):
+        """
+        Referenced page get its second chance
+        """
+        page = self.pages[index]
+        frame_index = self.frames.index(page)
+        self.bits[frame_index] = 1
+
+
+    def add_page(self, index: int):
+        """
+        Add page to frame and set second change to 0
+        """
+        page = self.pages[index]
+        self.frames[self.hand] = page
+        self.bits[self.hand] = 0
+        self.current_size += 1
+        self.advance_hand()
+
+
+    def replace_page(self, index: int):   
+        """
+        Cycle through frames acknowleding second chances until it finds one page with no second chance
+        """     
+        while True:
+            if self.bits[self.hand] == 1:
+                self.bits[self.hand] = 0
+                self.advance_hand()
+            else:
+                self.frames[self.hand] = None
+                self.current_size -= 1
+                self.add_page(index)
+                break
 
 
 
@@ -138,13 +203,12 @@ class Simulation:
 
             line = f.readline()
             while line != "":
-                # print(line)
                 self.pages.append(int(line.strip()))
                 line = f.readline()
 
 
     def __str__(self) -> str:
-        return f"Total Page Frames: {self.total_page_frames} | # Pages: {len(self.pages)}"
+        return f"Simulation | Total Page Frames: {self.total_page_frames} | # Pages: {len(self.pages)}"
     
 
     def run(self):
@@ -157,15 +221,10 @@ class Simulation:
             
 
 
-
-
 def main():
     data_path = Path("data.txt")
     world = Simulation(data_path)
     world.run()
-
-
-
 
 
 if __name__ == "__main__":
